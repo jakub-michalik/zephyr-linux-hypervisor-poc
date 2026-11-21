@@ -1,0 +1,18 @@
+#cloud-config
+# First-boot provisioning of the Dom0 Debian image (used by scripts/provision.sh).
+# @SSH_KEY@ is replaced with images/poc_key.pub by scripts/setup.sh.
+hostname: dom0
+disable_root: false
+users:
+  - name: root
+    ssh_authorized_keys:
+      - @SSH_KEY@
+package_update: true
+packages:
+  - xen-system-arm64
+  - stress-ng
+  - rt-tests
+  - python3
+power_state:
+  mode: poweroff
+  timeout: 30
