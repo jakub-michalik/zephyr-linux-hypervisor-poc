@@ -1,0 +1,6 @@
+# large or machine-specific artefacts, recreated by scripts/setup.sh
+images/
+tools/
+build/
+__pycache__/
+*.pyc
