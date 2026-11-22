@@ -1,0 +1,2 @@
+# /dev/cpu_dma_latency set to 0us
+T: 0 ( 1096) P:90 I:1000 C:  29951 Min:     45 Act:  128 Avg:  160 Max:   35579

@@ -1,0 +1,14 @@
+# Zephyr-on-Xen PoC results  2026-11-22T19:41:12+00:00
+# xen: 4.20.5-pre  sched: credit2  dom0: 6.12.118+deb13-arm64
+# run length: 30s per scenario
+LATENCY placement=dedicated load=idle zephyr: samples_s=30 min_us=0 avg_us=3 max_us=1267 overruns=1 | linux cyclictest: min_us=53 avg_us=151 max_us=5385
+LATENCY placement=dedicated load=cpu zephyr: samples_s=30 min_us=0 avg_us=4 max_us=3579 overruns=6 | linux cyclictest: min_us=77 avg_us=131 max_us=17680
+LATENCY placement=dedicated load=mem zephyr: samples_s=30 min_us=0 avg_us=8 max_us=3228 overruns=7 | linux cyclictest: min_us=64 avg_us=148 max_us=2829
+LATENCY placement=shared load=idle zephyr: samples_s=30 min_us=0 avg_us=168 max_us=10170 overruns=1950 | linux cyclictest: min_us=45 avg_us=160 max_us=35579
+LATENCY placement=shared load=cpu zephyr: samples_s=30 min_us=0 avg_us=8491 max_us=10183 overruns=26761 | linux cyclictest: min_us=63 avg_us=149 max_us=1329
+LATENCY placement=shared load=mem zephyr: samples_s=30 min_us=0 avg_us=8291 max_us=10386 overruns=26776 | linux cyclictest: min_us=75 avg_us=170 max_us=91774
+IPC load=idle pings=200 lost=0 min_us=1569 median_us=1899 p99_us=19310 max_us=19569
+IPC load=cpu  pings=200 lost=0 min_us=1420 median_us=1759 p99_us=14499 max_us=18332
+BOOT runs=5 ok=5 create+boot_median_ms=818 boot_after_unpause_median_ms=152 boot_after_unpause_max_ms=158
+FAULT crashed_domid=17 new_domid=18 recovered=yes detect_ms=203 restart_ms=1348 linux_uptime_s=429->430 (Linux kept running)
+# done
