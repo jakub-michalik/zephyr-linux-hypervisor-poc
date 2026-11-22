@@ -237,6 +237,7 @@ zephyr-app/rt_probe/   Zephyr measurement app
 dom0/                  rtprobe.py, run_scenarios.sh, cloud-init template
 scripts/               setup, provisioning, boot, deploy, baseline
 results/               measured data
+docs/                  presentation (HTML: arrow keys to navigate, N for notes; PDF)
 ```
 
 ## Versions

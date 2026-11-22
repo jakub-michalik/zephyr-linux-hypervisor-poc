@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zephyr on Xen PoC</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  --ink: #14213D;
+  --paper: #F5F3EE;
+  --paper2: #E9E6DF;
+  --accent: #C8602A;
+  --blue: #2F6B93;
+  --muted: #4A5568;
+  --ok: #2E7D4F;
+}
+body { font-family: 'IBM Plex Sans', Arial, sans-serif; color: var(--ink); }
+section { padding: 128px; background: var(--paper); display: flex; flex-direction: column; gap: 40px; }
+section.dark { background: var(--ink); color: var(--paper); }
+section.alt { background: var(--paper2); }
+h1 { font-size: 96px; font-weight: 700; line-height: 1.05; }
+h2 { font-size: 64px; font-weight: 700; line-height: 1.1; }
+h3 { font-size: 36px; font-weight: 600; }
+p { font-size: 32px; line-height: 1.4; }
+.eyebrow { font-size: 28px; font-weight: 600; color: var(--accent); letter-spacing: 2px; }
+.lead { font-size: 40px; color: var(--muted); }
+.dark .lead { color: #C9D3E3; }
+.mono { font-family: 'JetBrains Mono', 'Courier New', monospace; }
+.code { font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 26px; line-height: 1.5; background: var(--ink); color: #E8E4DA; padding: 32px 40px; border-radius: 12px; }
+.row { display: flex; gap: 40px; }
+.col { display: flex; flex-direction: column; gap: 24px; flex: 1; }
+.card { background: #FBFAF7; border: 2px solid #D6D1C6; border-radius: 16px; padding: 36px; display: flex; flex-direction: column; gap: 16px; flex: 1; }
+.card p { font-size: 28px; color: var(--muted); }
+.card .tag { font-size: 24px; font-weight: 600; color: var(--accent); }
+.status { font-size: 24px; font-weight: 600; padding: 6px 18px; border-radius: 999px; align-self: flex-start; }
+.done { background: #D7EBDD; color: #1F5A37; }
+.wip { background: #F6E0CF; color: #8A3E14; }
+.next { background: #DCE6EF; color: #23506F; }
+table { font-size: 28px; color: var(--ink); width: 100%; }
+.small { font-size: 24px; color: var(--muted); }
+.layer { border-radius: 12px; padding: 24px 32px; display: flex; flex-direction: column; gap: 6px; }
+.layer h3 { font-size: 32px; }
+.layer p { font-size: 26px; }
+.l-hw { background: #D6D1C6; }
+.l-xen { background: var(--ink); color: var(--paper); }
+.l-xen p { color: #C9D3E3; }
+.l-dom0 { background: #DCE6EF; flex: 3; }
+.l-zep { background: #F6E0CF; flex: 1.4; }
+.fade-in { animation: rise 600ms ease-out both; animation-delay: calc(var(--i, 0) * 120ms); }
+@keyframes rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+
+/* viewer */
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; background: #0B1324; overflow: hidden; }
+#stage { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; transform-origin: center; }
+#stage > section { position: absolute; inset: 0; width: 1920px; height: 1080px; display: none; }
+#stage > section.active { display: flex; }
+table { border-collapse: collapse; }
+th, td { text-align: left; padding: 14px 20px 14px 0; border-bottom: 1px solid #D6D1C6; }
+th { font-weight: 600; border-bottom: 2px solid #14213D; }
+section aside { display: none; }
+body.notes section.active aside { display: block; position: absolute; left: 0; right: 0; bottom: 0; padding: 20px 128px;
+  background: rgba(11,19,36,.92); color: #E8E4DA; font-size: 26px; line-height: 1.4; }
+#counter { position: fixed; right: 16px; bottom: 12px; color: #8C96A8; font: 14px Arial, sans-serif; }
+@media print {
+  @page { size: 1920px 1080px; margin: 0; }
+  html, body { overflow: visible; background: none; height: auto; }
+  #stage { position: static; transform: none !important; width: auto; height: auto; }
+  #stage > section { position: relative; display: flex !important; page-break-after: always; }
+  #stage > section * { animation: none !important; }
+  #counter { display: none; }
+}
+</style>
+</head>
+<body>
+<div id="stage">
+<section id="cover" class="dark" style="justify-content:center;">
+<p class="eyebrow">PROOF OF CONCEPT · LIVE STATUS</p>
+<h1>Zephyr next to Linux<br>on one ARM64 SoC, under Xen</h1>
+<p class="lead">Mixed-criticality setup: Linux for rich functions, Zephyr for real-time tasks, isolated by a type-1 hypervisor. Built and measured step by step.</p>
+<p class="status wip">In progress · updated 22 Nov 2026</p>
+<aside>This deck is updated as the PoC progresses. Status pills show what is done, in progress and next.</aside>
+</section>
+<section id="goal">
+<p class="eyebrow">THE QUESTION</p>
+<h2>Can Zephyr take over real-time work on an application processor?</h2>
+<div class="row">
+<div class="card fade-in" style="--i:0"><p class="tag">VARIANT A · THIS POC</p><h3>Under a hypervisor</h3><p>Linux and Zephyr side by side on one SoC, isolated by Xen. Real-time quality measured while Linux is loaded.</p></div>
+<div class="card fade-in" style="--i:1"><p class="tag">VARIANT B</p><h3>Natively</h3><p>Zephyr alone on the Cortex-A cores, no Linux. Limits of the MMU, SMP and driver support documented.</p></div>
+<div class="card fade-in" style="--i:2"><p class="tag">VARIANT C</p><h3>As native_sim</h3><p>Zephyr compiled as a Linux process for host-side testing and CI. No real-time behaviour.</p></div>
+</div>
+<aside>The posting describes running Zephyr on a feature-rich microprocessor, natively or with a hypervisor, plus native_sim as an option. This PoC starts with the hypervisor variant because it answers the mixed-criticality question directly.</aside>
+</section>
+<section id="arch" class="alt">
+<p class="eyebrow">ARCHITECTURE</p>
+<h2>Two operating systems, one SoC, Xen in between</h2>
+<div class="col" style="gap:16px;">
+<div class="row" style="gap:16px;">
+<div class="layer l-dom0 fade-in" style="--i:0"><h3>Dom0 · Debian 13, Linux 6.12</h3><p>vCPUs pinned to cores 0–2 · management (xl), drivers, load generators, measurement tools</p></div>
+<div class="layer l-zep fade-in" style="--i:1"><h3>DomU · Zephyr 4.1</h3><p>rt_probe app · 1 vCPU on core 3 · 16 MB RAM</p></div>
+</div>
+<div class="layer l-xen fade-in" style="--i:2"><h3>Xen 4.20 hypervisor · EL2</h3><p>stage-2 MMU isolation · virtual GICv3 · vCPU pinning · PV console and event channels</p></div>
+<div class="layer l-hw fade-in" style="--i:3"><h3>ARM64 platform: QEMU virt, 4× Cortex-A72, GICv3 (stand-in for i.MX8M)</h3><p>Same software stack moves to an i.MX8M Plus / i.MX93 board for real timing numbers</p></div>
+</div>
+<aside>Linux runs as the privileged domain Dom0, Zephyr as an unprivileged guest. Xen sits at exception level 2 and enforces memory isolation with the stage-2 MMU. The platform is emulated in QEMU for now.</aside>
+</section>
+<section id="bootchain">
+<p class="eyebrow">BOOT FLOW</p>
+<h2>How the board boots</h2>
+<div class="row" style="align-items:stretch;">
+<div class="layer l-hw fade-in" style="--i:0;flex:1"><h3>1 · QEMU</h3><p>Loads Xen, the Dom0 kernel and initrd into RAM and passes a device tree</p></div>
+<div class="layer l-xen fade-in" style="--i:1;flex:1"><h3>2 · Xen (EL2)</h3><p>Finds the kernel and initrd as multiboot modules in the device tree</p></div>
+<div class="layer l-dom0 fade-in" style="--i:2;flex:1"><h3>3 · Dom0 Linux</h3><p>Starts Xen tools: xenstored, xenconsoled, xl</p></div>
+<div class="layer l-zep fade-in" style="--i:3;flex:1"><h3>4 · Zephyr DomU</h3><p>Created by xl from Linux, pinned to its own core</p></div>
+</div>
+<div class="card"><h3>Same flow as on an i.MX board</h3><p>On i.MX8M, U-Boot takes QEMU’s role: it loads Xen, kernel, initrd and the device tree with the same multiboot nodes, then jumps to Xen. No UEFI or GRUB is needed, which keeps the boot chain short and predictable.</p></div>
+<aside>Patching the device tree with xen,xen-bootargs and multiboot module nodes is exactly what U-Boot scripts or Xen ImageBuilder do on real boards.</aside>
+</section>
+<section id="partition" class="alt">
+<p class="eyebrow">CPU PARTITIONING</p>
+<h2>Two placements are compared</h2>
+<div class="row">
+<div class="card fade-in" style="--i:0"><p class="tag">DEDICATED CORE</p><h3>Zephyr alone on core 3</h3><p>Dom0 has 3 vCPUs pinned to cores 0–2 (dom0_vcpus_pin). Zephyr’s vCPU is pinned to core 3. Nothing else is scheduled there.</p><p class="mono" style="font-size:24px">cpus="3"</p></div>
+<div class="card fade-in" style="--i:1"><p class="tag">SHARED CORE</p><h3>Zephyr shares core 0 with Linux</h3><p>Zephyr’s vCPU is pinned to core 0, where a Dom0 vCPU also runs. The Xen credit2 scheduler decides who runs when.</p><p class="mono" style="font-size:24px">cpus="0"</p></div>
+</div>
+<p class="small">Xen 4.20, credit2 scheduler, 4 physical cores, Dom0 1 GB RAM, Zephyr 16 MB RAM.</p>
+<aside>Dedicated cores are the usual choice for real-time guests. The shared case shows what happens when you consolidate without partitioning.</aside>
+</section>
+<section id="probe">
+<p class="eyebrow">DEMO APPLICATION</p>
+<h2>rt_probe: a real-time task that measures itself</h2>
+<div class="row">
+<div class="col">
+<div class="card"><h3>Periodic RT task</h3><p>Highest-priority thread wakes every 1 ms and records how late it was versus the ideal schedule. Min, average, max and a histogram are reported every second.</p></div>
+<div class="card"><h3>Command channel</h3><p>Linux talks to Zephyr over the Xen PV console: PING for round-trip latency, FAULT to crash Zephyr on purpose, PERIOD to change the task rate.</p></div>
+</div>
+<div class="col">
+<p class="code">BOOT uptime_ms=3 timer_hz=62500000<br>STAT t=12 n=1000 period_us=1000<br>&#160;&#160;min_us=4 avg_us=31 max_us=412<br>&#160;&#160;overruns=0 hist=410,520,61,9,0,0<br>PONG 17</p>
+<p class="small">Machine-readable output, parsed by the Linux-side scripts. Values above illustrate the format only.</p>
+<p class="small">Image size 45 KB · RAM 312 KB of 16 MB</p>
+</div>
+</div>
+<aside>The STAT line in the code block shows the output format, not a measured result. Real numbers appear on the results slides once runs complete.</aside>
+</section>
+<section id="tooling">
+<p class="eyebrow">LINUX-SIDE TOOLING</p>
+<h2>Every scenario is one command</h2>
+<div class="row">
+<div class="col">
+<p class="code">rtprobe.py create --cpus 3<br>rtprobe.py collect 30 out.csv<br>rtprobe.py ping 200 10<br>rtprobe.py boot 5<br>rtprobe.py fault<br><br>run_scenarios.sh 30</p>
+</div>
+<div class="col">
+<div class="card"><h3>rtprobe.py</h3><p>Talks to Zephyr over its PV console. Starts the domain, records latency, measures round trips, boot time and crash recovery.</p></div>
+<div class="card"><h3>run_scenarios.sh</h3><p>Runs all scenarios with stress-ng load and cyclictest on Linux in parallel, so Zephyr and Linux latency are measured side by side.</p></div>
+</div>
+</div>
+<aside>The same scripts run unchanged on a real board. Only the timing numbers will differ.</aside>
+</section>
+<section id="plan" class="alt">
+<p class="eyebrow">QUALITY SCENARIOS</p>
+<h2>What gets measured</h2>
+<table>
+<tr><th style="width:28%">Scenario</th><th style="width:52%">Method</th><th style="width:20%">Status</th></tr>
+<tr><td>Timer latency and jitter</td><td>rt_probe at 1 kHz, Linux idle</td><td>Done</td></tr>
+<tr><td>Interference from Linux load</td><td>stress-ng CPU and memory load in Dom0</td><td>Done</td></tr>
+<tr><td>Dedicated vs shared core</td><td>Zephyr pinned alone vs sharing a core with Dom0</td><td>Done</td></tr>
+<tr><td>Linux ↔ Zephyr latency</td><td>PING/PONG round trip over the PV console</td><td>Done</td></tr>
+<tr><td>Zephyr boot time</td><td>xl create until the first BOOT line</td><td>Done</td></tr>
+<tr><td>Fault isolation</td><td>FAULT crashes Zephyr; Linux keeps running; domain restarts</td><td>Done</td></tr>
+</table>
+<aside>Each scenario runs with the same tooling, so the method carries over unchanged to real hardware and to a Jailhouse comparison.</aside>
+</section>
+<section id="latency">
+<p class="eyebrow">RESULTS · TIMER LATENCY</p>
+<h2>A dedicated core keeps Zephyr on time</h2>
+<table>
+<tr><th style="width:22%">Placement</th><th style="width:18%">Linux load</th><th style="width:18%">Avg late</th><th style="width:18%">Max late</th><th style="width:24%">Missed 1 ms periods</th></tr>
+<tr><td>Dedicated</td><td>Idle</td><td>3 µs</td><td>1.3 ms</td><td>1 of 30,000 (0.003%)</td></tr>
+<tr><td>Dedicated</td><td>CPU stress</td><td>4 µs</td><td>3.6 ms</td><td>6 (0.02%)</td></tr>
+<tr><td>Dedicated</td><td>Memory stress</td><td>8 µs</td><td>3.2 ms</td><td>7 (0.02%)</td></tr>
+<tr><td>Shared</td><td>Idle</td><td>168 µs</td><td>10.2 ms</td><td>1,950 (6.5%)</td></tr>
+<tr><td>Shared</td><td>CPU stress</td><td>8.5 ms</td><td>10.2 ms</td><td>26,761 (89%)</td></tr>
+<tr><td>Shared</td><td>Memory stress</td><td>8.3 ms</td><td>10.4 ms</td><td>26,776 (89%)</td></tr>
+</table>
+<p class="small">rt_probe at 1 kHz, 30 s per run, Xen credit2. Emulated platform: compare rows with each other, not with hardware.</p>
+<aside>Avg late is how late the 1 ms task woke compared to its ideal schedule. On a shared core, the credit2 scheduler gives Linux time slices of up to about 10 ms, which is exactly the maximum lateness we see. Max values on the dedicated core come from the emulator itself and are expected to be far lower on hardware.</aside>
+</section>
+<section id="baseline" class="alt">
+<p class="eyebrow">CONTROL EXPERIMENT</p>
+<h2>The rare misses come from the emulator, not from Xen</h2>
+<table>
+<tr><th style="width:52%">Setup (same emulator, same rt_probe)</th><th style="width:24%">Missed periods</th><th style="width:24%">Max late</th></tr>
+<tr><td>Zephyr alone, no Xen, no Linux (33 s)</td><td>7</td><td>7.3 ms</td></tr>
+<tr><td>Xen, dedicated core, Linux idle (30 s)</td><td>1</td><td>1.3 ms</td></tr>
+<tr><td>Xen, dedicated core, Linux CPU stress (30 s)</td><td>6</td><td>3.6 ms</td></tr>
+<tr><td>Xen, dedicated core, Linux memory stress (30 s)</td><td>7</td><td>3.2 ms</td></tr>
+</table>
+<p class="lead">On a dedicated core, Xen adds no visible disturbance. Hard real-time guarantees still need hardware: long worst-case runs and GPIO timing on an oscilloscope.</p>
+<aside>Each emulated CPU is an ordinary thread on a non-real-time host, so the host can pause it at any time while the clock keeps running. That shows up as lateness even with no hypervisor at all.</aside>
+</section>
+<section id="statement" class="dark" style="justify-content:center;">
+<p class="eyebrow">KEY FINDING</p>
+<h1 style="font-size:88px">Under Linux load, a shared core misses 89% of Zephyr’s 1 ms deadlines. A dedicated core misses 0.02%.</h1>
+<p class="lead">Consolidating Linux and Zephyr on one SoC works only with strict CPU partitioning. The hypervisor’s scheduler, not Zephyr, decides real-time quality.</p>
+<aside>This is the main architectural takeaway: pin the real-time guest to its own core, or use a static partitioning hypervisor such as Jailhouse, or Xen’s null scheduler in a separate cpupool.</aside>
+</section>
+<section id="firstrun" class="alt">
+<p class="eyebrow">RESULTS · BOOT, IPC, FAULTS</p>
+<h2>Fast start, working channel, clean recovery</h2>
+<div class="row">
+<div class="card fade-in" style="--i:0"><p class="tag">BOOT · 5 RUNS</p><h3>152 ms</h3><p>Median from unpausing the domain to Zephyr’s first output. 0.82 s including domain creation by xl.</p></div>
+<div class="card fade-in" style="--i:1"><p class="tag">LINUX ↔ ZEPHYR · 200 PINGS</p><h3>1.9 ms</h3><p>Median round trip over the PV console, no loss. Same under CPU load (1.8 ms); p99 15–19 ms.</p></div>
+<div class="card fade-in" style="--i:2"><p class="tag">FAULT ISOLATION</p><h3>1.55 s</h3><p>Crash detected in 0.2 s, Zephyr restarted in 1.35 s. Linux kept running.</p></div>
+</div>
+<p class="small">Emulated platform: times show the mechanisms work end to end, not real hardware speed.</p>
+<aside>The PV console is a debug-grade channel; its p99 shows why a production design would use shared memory with event channels instead.</aside>
+</section>
+<section id="crash" class="alt">
+<p class="eyebrow">FAULT HANDLING</p>
+<h2>A Zephyr crash is detected and recovered by Linux</h2>
+<div class="row" style="align-items:stretch;">
+<div class="card fade-in" style="--i:0"><p class="tag">1</p><h3>Zephyr fails</h3><p>Fatal error handler calls the Xen hypercall SCHEDOP_shutdown with reason “crash”.</p></div>
+<div class="card fade-in" style="--i:1"><p class="tag">2</p><h3>Xen marks it</h3><p>The domain enters the crashed state. Its core and memory stay isolated from Linux.</p></div>
+<div class="card fade-in" style="--i:2"><p class="tag">3</p><h3>Linux detects</h3><p>A supervisor in Dom0 sees the state change (about 0.2 s in the emulator).</p></div>
+<div class="card fade-in" style="--i:3"><p class="tag">4</p><h3>Restart</h3><p>The domain is destroyed and recreated; Zephyr is back in about 1.4 s.</p></div>
+</div>
+<p class="small">Linux uptime continues across the test: the crash never reaches Dom0.</p>
+<aside>Without the hypercall, a crashed Zephyr would just spin and Xen would see a healthy running domain. Reporting the crash makes recovery possible. A watchdog would cover hangs the same way.</aside>
+</section>
+<section id="issue">
+<p class="eyebrow">FINDING ON THE WAY</p>
+<h2>The emulator, not Xen, froze the board</h2>
+<div class="row">
+<div class="card"><p class="tag">SYMPTOM</p><p>As soon as any Zephyr guest started, Dom0, SSH and even the Xen console stopped responding.</p></div>
+<div class="card"><p class="tag">DIAGNOSIS</p><p>Domain creation worked when paused; the freeze came on unpause, also with a stock Zephyr sample. QEMU’s main thread sat at 100% while all virtual CPUs idled.</p></div>
+<div class="card"><p class="tag">FIX</p><p>QEMU 7.0 shipped with the Zephyr SDK replaced by QEMU 8.2. Everything ran on the first try.</p></div>
+</div>
+<p class="lead">Lesson: pin and document tool versions; an emulator bug can look like a hypervisor bug.</p>
+<aside>Isolating the cause took three steps: paused versus running domain, own app versus stock sample, then a different emulator version.</aside>
+</section>
+<section id="limits" class="dark">
+<p class="eyebrow">KNOWN LIMITS</p>
+<h2>What this setup can and cannot show</h2>
+<div class="row">
+<div class="col"><h3>Shows</h3><p class="lead">The architecture works end to end: build, boot, isolation, restart, measurement tooling. Relative effects, such as dedicated versus shared core.</p></div>
+<div class="col"><h3>Does not show</h3><p class="lead">Absolute latency. QEMU emulates the CPU in software, so microsecond numbers need the real i.MX board.</p></div>
+</div>
+<aside>The emulated platform proves the method and the integration. Real timing numbers, cache and memory interference, and a Jailhouse comparison require hardware.</aside>
+</section>
+<section id="nextsteps" class="alt">
+<p class="eyebrow">NEXT STEPS</p>
+<h2>From emulator to real hardware</h2>
+<table>
+<tr><th style="width:34%">Step</th><th style="width:66%">Why</th></tr>
+<tr><td>i.MX8M Plus or i.MX93 board</td><td>Real microsecond latency, cache and memory interference</td></tr>
+<tr><td>Jailhouse variant</td><td>Same app and scripts; compare static partitioning with Xen</td></tr>
+<tr><td>Cache coloring, MemGuard</td><td>Limit Linux memory traffic hurting Zephyr timing</td></tr>
+<tr><td>Shared-memory IPC</td><td>Grant tables and event channels instead of the console</td></tr>
+<tr><td>Dom0less boot</td><td>Zephyr starts with Xen, before Linux has booted</td></tr>
+<tr><td>Zephyr natively on Cortex-A</td><td>Variant B: limits of MMU, SMP and drivers</td></tr>
+</table>
+<aside>Each step reuses rt_probe and the measurement scripts, so results stay comparable across variants.</aside>
+</section>
+<section id="repo">
+<p class="eyebrow">DELIVERABLES</p>
+<h2>Everything is reproducible from one repository</h2>
+<div class="row">
+<p class="code" style="flex:1">zephyr-linux-hypervisor-poc/<br>├─ zephyr-app/rt_probe/  Zephyr app<br>├─ dom0/rtprobe.py       Linux driver<br>├─ dom0/run_scenarios.sh all tests<br>├─ scripts/setup.sh      one-time setup<br>├─ scripts/run-xen.sh    boot board<br>├─ scripts/deploy.sh<br>├─ results/              measured data<br>└─ docs/                 this deck</p>
+<div class="col">
+<div class="card"><h3>Pinned versions</h3><p>Xen 4.20, Debian 13 (Linux 6.12), Zephyr 4.1, QEMU 8.2, Zephyr SDK 0.17.</p></div>
+<div class="card"><h3>No root needed</h3><p>After installing a few host packages, every step runs as a normal user; images and tools stay in the project folder.</p></div>
+</div>
+</div>
+<aside>The README covers requirements, setup, how to run and how to test, as the PoC description asks for documentation of setup, implementation, measurements and results.</aside>
+</section>
+<section id="progress">
+<p class="eyebrow">PROGRESS LOG</p>
+<h2>Where the PoC stands</h2>
+<div class="row">
+<div class="card"><p class="status done">Done</p><p>Xen 4.20 + Debian 13 Dom0 + Zephyr DomU running together</p><p>All six quality scenarios measured</p><p>Crash reporting and recovery working</p><p>Scripts and results in one reproducible folder</p></div>
+<div class="card"><p class="status wip">In progress</p><p>Written report in docs: setup, implementation, measurements, results</p></div>
+<div class="card"><p class="status next">Next</p><p>Run on i.MX8M Plus hardware</p><p>Jailhouse variant with the same app</p><p>Xen null scheduler and cache coloring</p></div>
+</div>
+<aside>Status as of 22 Nov 2026.</aside>
+</section>
+</div>
+<div id="counter"></div>
+<script>
+// Arrow keys, space, PageUp/PageDown, Home/End or click to navigate; N toggles speaker notes; print for PDF.
+const slides = [...document.querySelectorAll('#stage > section')];
+const counter = document.getElementById('counter');
+let cur = Math.min(Math.max(parseInt(location.hash.slice(1)) || 1, 1), slides.length) - 1;
+function fit() {
+  const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+  document.getElementById('stage').style.transform = `translate(-50%, -50%) scale(${s})`;
+}
+function show(i) {
+  cur = Math.min(Math.max(i, 0), slides.length - 1);
+  slides.forEach((el, k) => el.classList.toggle('active', k === cur));
+  counter.textContent = `${cur + 1} / ${slides.length}  ·  N = notes`;
+  history.replaceState(null, '', '#' + (cur + 1));
+}
+addEventListener('keydown', e => {
+  if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) show(cur + 1);
+  else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) show(cur - 1);
+  else if (e.key === 'Home') show(0);
+  else if (e.key === 'End') show(slides.length - 1);
+  else if (e.key === 'n' || e.key === 'N') document.body.classList.toggle('notes');
+});
+addEventListener('click', e => show(cur + (e.clientX > innerWidth / 2 ? 1 : -1)));
+addEventListener('resize', fit);
+fit(); show(cur);
+</script>
+</body>
+</html>
